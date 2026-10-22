@@ -1,0 +1,24 @@
+name: Lighter parser CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["lighter-price-parser/**", ".github/workflows/lighter-parser.yml"]
+  pull_request:
+    paths: ["lighter-price-parser/**", ".github/workflows/lighter-parser.yml"]
+
+defaults:
+  run:
+    working-directory: lighter-price-parser
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Run tests
+        run: uv run --python ${{ matrix.python }} --group dev pytest
