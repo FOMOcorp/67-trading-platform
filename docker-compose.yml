@@ -30,6 +30,9 @@ services:
     container_name: lighter-price-parser
     # все рынки; только нужные: добавьте "-s", "ETH", "BTC"
     command: ["--csv", "/app/data/prices.csv", "--quiet", "--metrics-port", "9102"]
+    environment:
+      # тот же прокси, что у telegram-parser; пусто — без прокси
+      PROXY_URL: ${PROXY_URL:-}
     volumes:
       - /opt/67-trading-data/lighter:/app/data
     ports:

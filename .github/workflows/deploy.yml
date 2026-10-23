@@ -34,6 +34,9 @@ jobs:
       TG_SESSION_DIR: ${{ vars.TG_SESSION_DIR || secrets.TG_SESSION_DIR || '/opt/67-trading-secrets/telegram-parser' }}
       SERVICES: ${{ inputs.service == 'all' && 'telegram-parser lighter-price-parser' || inputs.service }}
       DEPLOY_TELEGRAM: ${{ inputs.service != 'lighter-price-parser' }}
+      # общий прокси: попадает в telegram-parser/.env и в окружение lighter через compose.
+      # С паролем храните в секрете, без пароля можно в переменной
+      PROXY_URL: ${{ secrets.PROXY_URL || vars.PROXY_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,8 +44,6 @@ jobs:
       # процесса раннера на сервере (см. README)
       - name: Write telegram-parser/.env
         env:
-          # прокси с паролем храните в секрете, без пароля можно в переменной
-          PROXY_URL: ${{ secrets.PROXY_URL || vars.PROXY_URL }}
           TG_FOLDER: ${{ vars.TG_FOLDER }}
           HISTORY_DAYS: ${{ vars.HISTORY_DAYS }}
           HISTORY_DELAY_SECONDS: ${{ vars.HISTORY_DELAY_SECONDS }}
