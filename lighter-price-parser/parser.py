@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["websockets>=14.0"]
+# dependencies = ["websockets>=14.0", "prometheus-client>=0.20"]
 # ///
 
 """
@@ -27,12 +27,27 @@ import argparse
 import asyncio
 import csv
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from typing import Optional
 
 import websockets
+from prometheus_client import Counter, Gauge, start_http_server
 from websockets.exceptions import InvalidStatus, WebSocketException
+
+# метрики Prometheus, отдаются при --metrics-port
+WS_CONNECTED = Gauge("lighter_ws_connected", "1, если WebSocket подключён")
+RECONNECTS = Counter(
+    "lighter_reconnects_total", "Переподключения по причинам", ["reason"]
+)
+FRAMES = Counter("lighter_frames_received_total", "Сообщения, полученные от сервера")
+ROWS = Counter("lighter_rows_written_total", "Изменения цен (строки вывода и CSV)")
+LAST_UPDATE = Gauge(
+    "lighter_last_update_timestamp_seconds", "Время последнего изменения цены (unix)"
+)
+MARKETS = Gauge("lighter_markets_seen", "Рынки, по которым пришли цены")
+CSV_SIZE = Gauge("lighter_csv_size_bytes", "Размер CSV-файла")
 
 WS_URLS = {
     "mainnet": "wss://mainnet.zklighter.elliot.ai/stream",
@@ -154,6 +169,7 @@ async def stream(args) -> int:
         writer = csv.DictWriter(csv_file, fieldnames=CSV_FIELDS, extrasaction="ignore")
         if csv_file.tell() == 0:
             writer.writeheader()
+        CSV_SIZE.set_function(lambda: os.path.getsize(args.csv))
 
     backoff = 1
     try:
@@ -166,6 +182,7 @@ async def stream(args) -> int:
                         json.dumps({"type": "subscribe", "channel": "market_stats/all"})
                     )
                     log(f"connected: {url}")
+                    WS_CONNECTED.set(1)
                     backoff = 1
                     pinger = asyncio.create_task(ping_loop(ws))
                     try:
@@ -175,6 +192,7 @@ async def stream(args) -> int:
                             except ValueError:
                                 continue
                             mtype = msg.get("type", "")
+                            FRAMES.inc()
 
                             if mtype == "ping":
                                 await ws.send(json.dumps({"type": "pong"}))
@@ -198,6 +216,9 @@ async def stream(args) -> int:
                                 if last_seen.get(symbol) == key:
                                     continue  # цены не менялись
                                 last_seen[symbol] = key
+                                ROWS.inc()
+                                LAST_UPDATE.set_to_current_time()
+                                MARKETS.set(len(last_seen))
 
                                 if not args.quiet:
                                     print_row(ts, s)
@@ -215,6 +236,7 @@ async def stream(args) -> int:
                                 return 0
                     finally:
                         pinger.cancel()
+                        WS_CONNECTED.set(0)
             except InvalidStatus as e:
                 resp = e.response
                 reason = describe_rejection(
@@ -222,10 +244,12 @@ async def stream(args) -> int:
                 )
                 if reason:
                     raise FatalError(reason) from e
+                RECONNECTS.labels(reason=f"http_{resp.status_code}").inc()
                 log(f"HTTP {resp.status_code}; reconnect in {backoff}s")
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, MAX_BACKOFF)
             except (WebSocketException, OSError, asyncio.TimeoutError) as e:
+                RECONNECTS.labels(reason="connection_lost").inc()
                 log(f"connection lost: {e!r}; reconnect in {backoff}s")
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, MAX_BACKOFF)
@@ -253,6 +277,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--quiet", action="store_true", help="не печатать строки в консоль")
     p.add_argument(
+        "--metrics-port",
+        type=int,
+        help="отдавать метрики Prometheus на http://0.0.0.0:PORT/metrics",
+    )
+    p.add_argument(
         "--debug", action="store_true", help="показывать неопознанные сообщения"
     )
     return p
@@ -260,6 +289,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
+    if args.metrics_port:
+        start_http_server(args.metrics_port)
+        log(f"metrics: http://0.0.0.0:{args.metrics_port}/metrics")
     try:
         sys.exit(asyncio.run(stream(args)))
     except FatalError as e:

@@ -1,0 +1,25 @@
+name: Telegram parser CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["telegram-parser/**", ".github/workflows/telegram-parser.yml"]
+  pull_request:
+    paths: ["telegram-parser/**", ".github/workflows/telegram-parser.yml"]
+
+defaults:
+  run:
+    working-directory: telegram-parser
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Run tests
+        run: uv run --locked --python ${{ matrix.python }} --group dev pytest
+

@@ -30,6 +30,18 @@ python parser.py -s ETH BTC
 ```
 </details>
 
+## Запуск в Docker
+
+Парсер входит в общий `docker-compose.yml` в корне репозитория. Он пишет все рынки
+в `/opt/67-trading-data/lighter/prices.csv` на хосте:
+
+```bash
+docker compose up -d --build lighter-price-parser
+```
+
+Чтобы писать только нужные рынки, поменяйте `command` в `docker-compose.yml`,
+например `["--csv", "/app/data/prices.csv", "--quiet", "-s", "ETH", "BTC"]`.
+
 ## Примеры
 
 ```bash
@@ -56,6 +68,7 @@ uv run parser.py --testnet               # тестовая сеть
 | `--testnet` | подключиться к testnet |
 | `--no-readonly` | отключить read-only подключение (см. ниже) |
 | `--quiet` | не печатать строки в консоль |
+| `--metrics-port PORT` | отдавать метрики Prometheus на `:PORT/metrics` |
 | `--debug` | показывать неопознанные сообщения сервера |
 
 ### Колонки CSV
@@ -63,6 +76,22 @@ uv run parser.py --testnet               # тестовая сеть
 `ts_utc, symbol, market_id, mark_price, index_price, last_trade_price,
 best_bid_price, best_ask_price, mid_price, current_funding_rate,
 daily_price_change, daily_quote_token_volume`
+
+## Метрики
+
+С `--metrics-port PORT` (в Docker это порт 9102) на `/metrics` доступны:
+
+| Метрика | Что показывает |
+| --- | --- |
+| `lighter_ws_connected` | 1, если WebSocket подключён |
+| `lighter_reconnects_total{reason}` | переподключения: `connection_lost`, `http_429`, `http_5xx`… |
+| `lighter_frames_received_total` | сообщения от сервера |
+| `lighter_rows_written_total` | изменения цен (строки CSV) |
+| `lighter_last_update_timestamp_seconds` | время последнего изменения цены |
+| `lighter_markets_seen` | рынки, по которым пришли цены |
+| `lighter_csv_size_bytes` | размер CSV |
+
+Пример алерта: `time() - lighter_last_update_timestamp_seconds > 300`.
 
 ## Read-only режим
 
