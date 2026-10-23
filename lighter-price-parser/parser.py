@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["websockets>=14.0", "prometheus-client>=0.20"]
+# dependencies = ["websockets>=15.0", "python-socks[asyncio]>=2.5", "prometheus-client>=0.20"]
 # ///
 
 """
@@ -31,6 +31,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import urlsplit
 
 import websockets
 from prometheus_client import Counter, Gauge, start_http_server
@@ -48,6 +49,9 @@ LAST_UPDATE = Gauge(
 )
 MARKETS = Gauge("lighter_markets_seen", "Рынки, по которым пришли цены")
 CSV_SIZE = Gauge("lighter_csv_size_bytes", "Размер CSV-файла")
+NO_DATA = Counter(
+    "lighter_no_data_reconnects_total", "Переподключения из-за того, что после подписки не пришли цены"
+)
 
 WS_URLS = {
     "mainnet": "wss://mainnet.zklighter.elliot.ai/stream",
@@ -56,6 +60,7 @@ WS_URLS = {
 
 PING_EVERY = 60  # сервер закрывает соединение, если от клиента нет фреймов 2 минуты
 MAX_BACKOFF = 30  # максимальная пауза между переподключениями, секунды
+NO_DATA_TIMEOUT = 30  # нет цен столько секунд после подписки — переподключаемся
 
 CSV_FIELDS = [
     "ts_utc",
@@ -138,6 +143,27 @@ async def ping_loop(ws) -> None:
         await ws.send(json.dumps({"type": "ping"}))
 
 
+async def reconnect_if_silent(ws, got_stats: asyncio.Event) -> None:
+    """Сервер иногда принимает подписку и молчит. Тогда рвём соединение,
+    и основной цикл переподключится."""
+    await asyncio.sleep(NO_DATA_TIMEOUT)
+    if not got_stats.is_set():
+        NO_DATA.inc()
+        log(
+            f"no market data {NO_DATA_TIMEOUT}s after subscribe; reconnecting "
+            "(если повторяется постоянно, Lighter может блокировать IP: попробуйте --proxy)"
+        )
+        await ws.close()
+
+
+def describe_proxy(proxy: Optional[str]) -> str:
+    """Адрес прокси без логина и пароля, для логов."""
+    if not proxy:
+        return ""
+    parts = urlsplit(proxy)
+    return f" via {parts.scheme}://{parts.hostname}:{parts.port}"
+
+
 def print_row(ts: str, s: dict) -> None:
     print(
         f"{ts}  {s['symbol']:<12} "
@@ -176,15 +202,22 @@ async def stream(args) -> int:
         while True:
             try:
                 async with websockets.connect(
-                    url, ping_interval=None, max_size=None
+                    url, ping_interval=None, max_size=None, proxy=args.proxy or None
                 ) as ws:
+                    # подписка, отправленная до "connected", иногда теряется сервером
+                    hello = json.loads(await asyncio.wait_for(ws.recv(), NO_DATA_TIMEOUT))
+                    FRAMES.inc()
+                    if hello.get("type") != "connected" and args.debug:
+                        log(f"unexpected first message: {str(hello)[:300]}")
                     await ws.send(
                         json.dumps({"type": "subscribe", "channel": "market_stats/all"})
                     )
-                    log(f"connected: {url}")
+                    log(f"connected: {url}{describe_proxy(args.proxy)}")
                     WS_CONNECTED.set(1)
                     backoff = 1
+                    got_stats = asyncio.Event()
                     pinger = asyncio.create_task(ping_loop(ws))
+                    watchdog = asyncio.create_task(reconnect_if_silent(ws, got_stats))
                     try:
                         async for raw in ws:
                             try:
@@ -206,6 +239,7 @@ async def stream(args) -> int:
                                     log(f"other message: {raw[:300]}")
                                 continue
 
+                            got_stats.set()
                             ts = now_iso()
                             for s in stats:
                                 symbol = str(s["symbol"]).upper()
@@ -236,6 +270,7 @@ async def stream(args) -> int:
                                 return 0
                     finally:
                         pinger.cancel()
+                        watchdog.cancel()
                         WS_CONNECTED.set(0)
             except InvalidStatus as e:
                 resp = e.response
@@ -276,6 +311,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-readonly отключает)",
     )
     p.add_argument("--quiet", action="store_true", help="не печатать строки в консоль")
+    p.add_argument(
+        "--proxy",
+        default=os.environ.get("PROXY_URL") or None,
+        help="прокси для WebSocket: socks5://user:pass@host:1080 или http://host:3128 "
+        "(по умолчанию из PROXY_URL)",
+    )
     p.add_argument(
         "--metrics-port",
         type=int,

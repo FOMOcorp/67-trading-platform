@@ -1,0 +1,13 @@
+# Provisioning дашбордов парсеров для Grafana.
+# Скопируйте в /etc/grafana/provisioning/dashboards/, а содержимое grafana/dashboards/ —
+# в path ниже. Каждая поддиректория станет отдельной папкой в Grafana.
+apiVersion: 1
+
+providers:
+  - name: trading-parsers
+    type: file
+    allowUiUpdates: true
+    updateIntervalSeconds: 60
+    options:
+      path: /var/lib/grafana/dashboards/trading-parsers
+      foldersFromFilesStructure: true

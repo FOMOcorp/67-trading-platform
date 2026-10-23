@@ -65,6 +65,29 @@ scrape_configs:
       - targets: ["<host>:9101", "<host>:9102"]
 ```
 
+### Дашборды Grafana
+
+Готовые дашборды лежат в `grafana/dashboards/`, у каждого сервиса своя папка:
+
+| Файл | Дашборд |
+| --- | --- |
+| `grafana/dashboards/telegram-parser/telegram-parser.json` | Telegram parser: соединение, поток сообщений, задержка, история, FloodWait, ошибки, размер базы |
+| `grafana/dashboards/lighter-price-parser/lighter-price-parser.json` | Lighter price parser: WebSocket, изменения цен, переподключения, размер CSV |
+
+В каждом дашборде вверху выбираются источник Prometheus и инстанс, поэтому к вашему
+Prometheus ничего привязывать не нужно.
+
+**Импорт вручную:** Dashboards → New → Import → загрузите JSON и выберите папку.
+
+**Provisioning:** каждая поддиректория станет отдельной папкой в Grafana.
+
+```bash
+sudo mkdir -p /var/lib/grafana/dashboards/trading-parsers
+sudo cp -r grafana/dashboards/* /var/lib/grafana/dashboards/trading-parsers/
+sudo cp grafana/provisioning/dashboards/trading-parsers.yml /etc/grafana/provisioning/dashboards/
+sudo systemctl restart grafana-server
+```
+
 ## Деплой
 
 Тесты запускаются автоматически на push и pull request (`lighter-parser.yml`, `telegram-parser.yml`).
@@ -125,7 +148,7 @@ Settings → Environments → New environment → `production`. Там же мо
 | --- | --- | --- |
 | Variable | `METRICS_BIND` | интерфейс для портов метрик, по умолчанию `127.0.0.1` |
 | Variable или Secret | `TG_SESSION_DIR` | директория с `telegram.session` на сервере, по умолчанию `/opt/67-trading-secrets/telegram-parser` |
-| Variable или Secret | `PROXY_URL` | прокси для Telegram, если нужен; с паролем — в секрете |
+| Variable или Secret | `PROXY_URL` | прокси для обоих парсеров, если нужен; с паролем — в секрете |
 | Variable | `TG_FOLDER`, `HISTORY_DAYS`, `HISTORY_DELAY_SECONDS`, `LOG_LEVEL` | необязательные настройки `telegram-parser`, см. его README |
 
 `telegram-parser/.env` собирается из этих значений на время деплоя и потом удаляется.

@@ -68,6 +68,7 @@ uv run parser.py --testnet               # тестовая сеть
 | `--testnet` | подключиться к testnet |
 | `--no-readonly` | отключить read-only подключение (см. ниже) |
 | `--quiet` | не печатать строки в консоль |
+| `--proxy URL` | прокси для WebSocket: `socks5://user:pass@host:1080` или `http://host:3128`; по умолчанию из `PROXY_URL` |
 | `--metrics-port PORT` | отдавать метрики Prometheus на `:PORT/metrics` |
 | `--debug` | показывать неопознанные сообщения сервера |
 
