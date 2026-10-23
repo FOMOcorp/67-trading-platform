@@ -1,0 +1,95 @@
+name: Deploy parsers
+
+# Сборка и деплой по кнопке: Actions → Deploy parsers → Run workflow.
+# Работает на self-hosted раннере, где установлены Docker и docker compose.
+# Настройка описана в README в корне репозитория.
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: Что деплоить
+        type: choice
+        options: [all, telegram-parser, lighter-price-parser]
+        default: all
+
+concurrency:
+  group: deploy-parsers
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    environment: production
+    timeout-minutes: 30
+    env:
+      # фиксированное имя проекта: контейнеры не зависят от пути рабочей директории раннера
+      COMPOSE_PROJECT_NAME: trading-platform
+      METRICS_BIND: ${{ vars.METRICS_BIND || '127.0.0.1' }}
+      # значение по умолчанию совпадает с docker-compose.yml
+      TG_SESSION_DIR: ${{ vars.TG_SESSION_DIR || secrets.TG_SESSION_DIR || '/opt/67-trading-secrets/telegram-parser' }}
+      SERVICES: ${{ inputs.service == 'all' && 'telegram-parser lighter-price-parser' || inputs.service }}
+      DEPLOY_TELEGRAM: ${{ inputs.service != 'lighter-price-parser' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # TG_API_ID и TG_API_HASH не хранятся в GitHub: они берутся из окружения
+      # процесса раннера на сервере (см. README)
+      - name: Write telegram-parser/.env
+        env:
+          # прокси с паролем храните в секрете, без пароля можно в переменной
+          PROXY_URL: ${{ secrets.PROXY_URL || vars.PROXY_URL }}
+          TG_FOLDER: ${{ vars.TG_FOLDER }}
+          HISTORY_DAYS: ${{ vars.HISTORY_DAYS }}
+          HISTORY_DELAY_SECONDS: ${{ vars.HISTORY_DELAY_SECONDS }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+        run: |
+          if [ "$DEPLOY_TELEGRAM" = true ] && { [ -z "$TG_API_ID" ] || [ -z "$TG_API_HASH" ]; }; then
+            echo "::error::TG_API_ID и TG_API_HASH не заданы в окружении раннера (см. README)"
+            exit 1
+          fi
+          # docker compose читает env_file всех сервисов, поэтому файл нужен всегда
+          umask 077
+          for name in TG_API_ID TG_API_HASH PROXY_URL TG_FOLDER HISTORY_DAYS HISTORY_DELAY_SECONDS LOG_LEVEL; do
+            printf '%s=%s\n' "$name" "${!name}"
+          done > telegram-parser/.env
+
+      - name: Check Telegram session
+        if: env.DEPLOY_TELEGRAM == 'true'
+        run: |
+          session="$TG_SESSION_DIR/telegram.session"
+          if [ ! -f "$session" ]; then
+            echo "::error::Нет $session. Скопируйте сессию на сервер (см. README)"
+            exit 1
+          fi
+
+      - name: Build
+        run: docker compose build --pull $SERVICES
+
+      - name: Deploy
+        run: docker compose up -d $SERVICES
+
+      - name: Check containers
+        run: |
+          sleep 20
+          failed=0
+          for service in $SERVICES; do
+            state=$(docker inspect -f '{{.State.Status}} {{.RestartCount}}' "$service")
+            echo "$service: $state"
+            if [ "$state" != "running 0" ]; then
+              echo "::error::$service не запустился"
+              failed=1
+            fi
+            docker compose logs --tail 30 "$service"
+          done
+          exit $failed
+
+      - name: Clean up
+        if: always()
+        run: |
+          rm -f telegram-parser/.env
+          docker image prune -f

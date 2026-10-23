@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+
+# секреты и данные парсера: сессия Telegram даёт полный доступ к аккаунту
+.env
+data/
+*.session
+*.session-journal

@@ -1,0 +1,37 @@
+# Все парсеры проекта. Данные складываются на хосте в /opt/67-trading-data,
+# у каждого парсера своя поддиректория.
+# Метрики Prometheus: telegram-parser :9101/metrics, lighter-price-parser :9102/metrics,
+# слушают на METRICS_BIND (по умолчанию только 127.0.0.1).
+#
+#   docker compose up -d --build
+#   docker compose run --rm telegram-parser login   # один раз перед первым запуском
+
+services:
+  telegram-parser:
+    build: ./telegram-parser
+    image: telegram-parser
+    container_name: telegram-parser
+    env_file: ./telegram-parser/.env
+    environment:
+      TG_SESSION_PATH: /app/session/telegram.session
+      DB_PATH: /app/data/messages.db
+      METRICS_PORT: 9101
+    volumes:
+      - /opt/67-trading-data/telegram-parser:/app/data
+      # сессия отдельно от данных: она даёт полный доступ к аккаунту
+      - ${TG_SESSION_DIR:-/opt/67-trading-secrets/telegram-parser}:/app/session
+    ports:
+      - "${METRICS_BIND:-127.0.0.1}:9101:9101"
+    restart: unless-stopped
+
+  lighter-price-parser:
+    build: ./lighter-price-parser
+    image: lighter-price-parser
+    container_name: lighter-price-parser
+    # все рынки; только нужные: добавьте "-s", "ETH", "BTC"
+    command: ["--csv", "/app/data/prices.csv", "--quiet", "--metrics-port", "9102"]
+    volumes:
+      - /opt/67-trading-data/lighter:/app/data
+    ports:
+      - "${METRICS_BIND:-127.0.0.1}:9102:9102"
+    restart: unless-stopped
