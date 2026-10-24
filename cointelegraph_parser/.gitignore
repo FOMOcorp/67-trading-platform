@@ -1,0 +1,34 @@
+# Python: окружения и кэш
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+
+# Собранные данные, временные файлы и логи
+data/
+.tmp/
+*.log
+
+# Тесты и отчёты о покрытии
+tests/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# EDA и Jupyter
+*.ipynb
+.ipynb_checkpoints/
+requirements-eda.txt
+
+# Локальные настройки и переменные окружения
+.vscode/
+.idea/
+.env
+.env.*
+!.env.example
+
+# Служебные файлы ОС
+Thumbs.db
+.DS_Store
