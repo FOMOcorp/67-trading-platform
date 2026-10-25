@@ -16,10 +16,14 @@ ROOT = Path(__file__).resolve().parent
 logger = logging.getLogger(__name__)
 
 
-def collect(storage, history, limit):
+def collect(storage, history, limit, reverse=False):
+    latest = storage.latest_published_at() if history and reverse else None
+    start_month = latest.strftime("%Y-%m") if latest else None
+    if history and reverse:
+        logger.info("History: newest months first, starting from %s", start_month or "latest published sitemap")
     source = Source()
     saved = failed = 0
-    for url in source.urls(history):
+    for url in source.urls(history, reverse=reverse, start_month=start_month):
         if storage.contains(url):
             continue
         try:
@@ -63,9 +67,13 @@ def main():
                         choices=["run", "history", "once", "watch"],
                         help="run (default): load history, then watch every 5 minutes")
     parser.add_argument("--limit", type=int, default=0, help="New articles per pass; 0 = unlimited")
+    parser.add_argument("--reverse", action="store_true",
+                        help="history/run: visit months newest first, starting from latest saved publication")
     args = parser.parse_args()
     if args.limit < 0:
         parser.error("--limit must be non-negative")
+    if args.reverse and args.mode not in {"history", "run"}:
+        parser.error("--reverse is available only for history and run")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     # Для Postgres меняется эта строка; сборщику нужны только contains и save.
     storage = CsvStorage(ROOT / "data" / "articles.csv")
@@ -75,7 +83,7 @@ def main():
         started = time.monotonic()
         retry_at = 0
         try:
-            failed = collect(storage, history_pending, args.limit)
+            failed = collect(storage, history_pending, args.limit, reverse=args.reverse and history_pending)
             had_errors = had_errors or bool(failed)
             history_pending = False
         except HTTPError as exc:
