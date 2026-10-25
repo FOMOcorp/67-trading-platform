@@ -48,7 +48,7 @@ class NoRedirects(HTTPRedirectHandler):
 
 class Source:
     def __init__(self):
-        self.delay = 5.0
+        self.delay = 2.0
         self.last_request = 0.0
         self.opener = build_opener(NoRedirects())
         robots_url = BASE_URL + "/robots.txt"
@@ -76,7 +76,7 @@ class Source:
             raise PermissionError(f"robots.txt disallows {url}")
         return self._read(url)
 
-    def urls(self, history):
+    def urls(self, history, reverse=False, start_month=None):
         kind, maps = sitemap_locations(self.get(BASE_URL + "/sitemap.xml"))
         if kind != "sitemapindex":
             raise ValueError("Expected the published monthly sitemap index")
@@ -88,6 +88,12 @@ class Source:
             raise ValueError("No monthly article sitemaps found")
         if not history:
             maps = maps[-2:]  # Сохраняет переход через границу месяца.
+        elif reverse:
+            if start_month:
+                maps = [url for url in maps if url.rsplit("/", 1)[-1][:7] <= start_month]
+            maps.reverse()
+            if not maps:
+                raise ValueError(f"No article sitemaps at or before {start_month}")
         seen = set()
         for sitemap in maps:
             kind, urls = sitemap_locations(self.get(sitemap))
@@ -95,6 +101,9 @@ class Source:
                 raise ValueError(f"Expected article URLs in {sitemap}")
             for url in urls:
                 url = canonical_url(url)
+                section = urlsplit(url).path.strip("/").split("/", 1)[0]
+                if section in {"press-releases", "research", "commissioned"}:
+                    continue
                 if url not in seen:
                     seen.add(url)
                     yield url
