@@ -1,0 +1,20 @@
+[project]
+name = "twitter-parser"
+version = "0.1.0"
+description = "Парсер постов Twitter/X-аккаунтов через twitterapi.io с сохранением в SQLite"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "httpx[socks]>=0.27",
+    "prometheus-client>=0.20",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

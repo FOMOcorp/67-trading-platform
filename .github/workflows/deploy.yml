@@ -10,7 +10,7 @@ on:
       service:
         description: Что деплоить
         type: choice
-        options: [all, telegram-parser, lighter-price-parser]
+        options: [all, telegram-parser, lighter-price-parser, twitter-parser]
         default: all
 
 concurrency:
@@ -32,8 +32,9 @@ jobs:
       METRICS_BIND: ${{ vars.METRICS_BIND || '127.0.0.1' }}
       # значение по умолчанию совпадает с docker-compose.yml
       TG_SESSION_DIR: ${{ vars.TG_SESSION_DIR || secrets.TG_SESSION_DIR || '/opt/67-trading-secrets/telegram-parser' }}
-      SERVICES: ${{ inputs.service == 'all' && 'telegram-parser lighter-price-parser' || inputs.service }}
-      DEPLOY_TELEGRAM: ${{ inputs.service != 'lighter-price-parser' }}
+      SERVICES: ${{ inputs.service == 'all' && 'telegram-parser lighter-price-parser twitter-parser' || inputs.service }}
+      DEPLOY_TELEGRAM: ${{ inputs.service == 'all' || inputs.service == 'telegram-parser' }}
+      DEPLOY_TWITTER: ${{ inputs.service == 'all' || inputs.service == 'twitter-parser' }}
       # общий прокси: попадает в telegram-parser/.env и в окружение lighter через compose.
       # С паролем храните в секрете, без пароля можно в переменной
       PROXY_URL: ${{ secrets.PROXY_URL || vars.PROXY_URL }}
@@ -58,6 +59,26 @@ jobs:
           for name in TG_API_ID TG_API_HASH PROXY_URL TG_FOLDER HISTORY_DAYS HISTORY_DELAY_SECONDS LOG_LEVEL; do
             printf '%s=%s\n' "$name" "${!name}"
           done > telegram-parser/.env
+
+      - name: Write twitter-parser/.env
+        env:
+          # ключ из секрета; если его нет — из окружения раннера, как ключи Telegram
+          TWITTERAPI_IO_KEY_SECRET: ${{ secrets.TWITTERAPI_IO_KEY }}
+          TW_ACCOUNTS: ${{ vars.TW_ACCOUNTS }}
+          INCLUDE_REPLIES: ${{ vars.TW_INCLUDE_REPLIES }}
+          POLL_SECONDS: ${{ vars.TW_POLL_SECONDS }}
+          HISTORY_DAYS: ${{ vars.TW_HISTORY_DAYS }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+        run: |
+          TWITTERAPI_IO_KEY="${TWITTERAPI_IO_KEY_SECRET:-$TWITTERAPI_IO_KEY}"
+          if [ "$DEPLOY_TWITTER" = true ] && { [ -z "$TWITTERAPI_IO_KEY" ] || [ -z "$TW_ACCOUNTS" ]; }; then
+            echo "::error::TWITTERAPI_IO_KEY или TW_ACCOUNTS не заданы (см. README)"
+            exit 1
+          fi
+          umask 077
+          for name in TWITTERAPI_IO_KEY TW_ACCOUNTS PROXY_URL INCLUDE_REPLIES POLL_SECONDS HISTORY_DAYS LOG_LEVEL; do
+            printf '%s=%s\n' "$name" "${!name}"
+          done > twitter-parser/.env
 
       - name: Check Telegram session
         if: env.DEPLOY_TELEGRAM == 'true'
@@ -92,5 +113,5 @@ jobs:
       - name: Clean up
         if: always()
         run: |
-          rm -f telegram-parser/.env
+          rm -f telegram-parser/.env twitter-parser/.env
           docker image prune -f

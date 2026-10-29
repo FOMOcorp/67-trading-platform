@@ -1,6 +1,7 @@
 # Все парсеры проекта. Данные складываются на хосте в /opt/67-trading-data,
 # у каждого парсера своя поддиректория.
 # Метрики Prometheus: telegram-parser :9101/metrics, lighter-price-parser :9102/metrics,
+# twitter-parser :9103/metrics,
 # слушают на METRICS_BIND (по умолчанию только 127.0.0.1).
 #
 #   docker compose up -d --build
@@ -37,4 +38,18 @@ services:
       - /opt/67-trading-data/lighter:/app/data
     ports:
       - "${METRICS_BIND:-127.0.0.1}:9102:9102"
+    restart: unless-stopped
+
+  twitter-parser:
+    build: ./twitter-parser
+    image: twitter-parser
+    container_name: twitter-parser
+    env_file: ./twitter-parser/.env
+    environment:
+      DB_PATH: /app/data/tweets.db
+      METRICS_PORT: 9103
+    volumes:
+      - /opt/67-trading-data/twitter-parser:/app/data
+    ports:
+      - "${METRICS_BIND:-127.0.0.1}:9103:9103"
     restart: unless-stopped

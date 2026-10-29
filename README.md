@@ -33,12 +33,14 @@
 | --- | --- |
 | `telegram-parser` | `/opt/67-trading-data/telegram-parser/messages.db`; сессия Telegram отдельно, в `TG_SESSION_DIR` (по умолчанию `/opt/67-trading-secrets/telegram-parser/`) |
 | `lighter-price-parser` | `/opt/67-trading-data/lighter/prices.csv` |
+| `twitter-parser` | `/opt/67-trading-data/twitter-parser/tweets.db` |
 
 На macOS добавьте `/opt/67-trading-data` в Docker Desktop → Settings → Resources → File sharing.
 
 ```bash
 cp .env.example .env                                    # при необходимости поменять METRICS_BIND и TG_SESSION_DIR
 cp telegram-parser/.env.example telegram-parser/.env    # ключи Telegram
+cp twitter-parser/.env.example twitter-parser/.env      # ключ twitterapi.io и список аккаунтов
 docker compose run --rm telegram-parser login           # один раз
 docker compose up -d --build
 ```
@@ -47,12 +49,13 @@ docker compose up -d --build
 
 ### Метрики
 
-Оба парсера отдают метрики Prometheus:
+Все парсеры отдают метрики Prometheus:
 
 | Сервис | Адрес | Префикс |
 | --- | --- | --- |
 | `telegram-parser` | `http://<host>:9101/metrics` | `tg_` |
 | `lighter-price-parser` | `http://<host>:9102/metrics` | `lighter_` |
+| `twitter-parser` | `http://<host>:9103/metrics` | `tw_` |
 
 По умолчанию порты открыты только на `127.0.0.1`. Если Prometheus на другой машине
 или в другой docker-сети, задайте `METRICS_BIND=0.0.0.0` и закройте порты файрволом
@@ -62,7 +65,7 @@ docker compose up -d --build
 scrape_configs:
   - job_name: trading-parsers
     static_configs:
-      - targets: ["<host>:9101", "<host>:9102"]
+      - targets: ["<host>:9101", "<host>:9102", "<host>:9103"]
 ```
 
 ### Дашборды Grafana
@@ -90,9 +93,9 @@ sudo systemctl restart grafana-server
 
 ## Деплой
 
-Тесты запускаются автоматически на push и pull request (`lighter-parser.yml`, `telegram-parser.yml`).
+Тесты запускаются автоматически на push и pull request (`lighter-parser.yml`, `telegram-parser.yml`, `twitter-parser.yml`).
 Сборка и деплой запускаются вручную: **Actions → Deploy parsers → Run workflow**.
-Можно выбрать ветку и что деплоить: `all`, `telegram-parser` или `lighter-price-parser`.
+Можно выбрать ветку и что деплоить: `all`, `telegram-parser`, `lighter-price-parser` или `twitter-parser`.
 Workflow (`deploy.yml`) выполняется на self-hosted раннере: собирает образы через
 `docker compose build`, поднимает контейнеры через `docker compose up -d` и проверяет,
 что они запустились.
@@ -150,5 +153,8 @@ Settings → Environments → New environment → `production`. Там же мо
 | Variable или Secret | `TG_SESSION_DIR` | директория с `telegram.session` на сервере, по умолчанию `/opt/67-trading-secrets/telegram-parser` |
 | Variable или Secret | `PROXY_URL` | прокси для обоих парсеров, если нужен; с паролем — в секрете |
 | Variable | `TG_FOLDER`, `HISTORY_DAYS`, `HISTORY_DELAY_SECONDS`, `LOG_LEVEL` | необязательные настройки `telegram-parser`, см. его README |
+| Secret | `TWITTERAPI_IO_KEY` | ключ twitterapi.io; можно вместо секрета задать в `.env` раннера, как ключи Telegram |
+| Variable | `TW_ACCOUNTS` | аккаунты для `twitter-parser` через запятую |
+| Variable | `TW_INCLUDE_REPLIES`, `TW_POLL_SECONDS`, `TW_HISTORY_DAYS` | необязательные настройки `twitter-parser`: `INCLUDE_REPLIES`, `POLL_SECONDS`, `HISTORY_DAYS` из его README |
 
-`telegram-parser/.env` собирается из этих значений на время деплоя и потом удаляется.
+`telegram-parser/.env` и `twitter-parser/.env` собираются из этих значений на время деплоя и потом удаляются.
