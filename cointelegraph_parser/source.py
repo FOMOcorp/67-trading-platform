@@ -48,7 +48,7 @@ class NoRedirects(HTTPRedirectHandler):
 
 class Source:
     def __init__(self):
-        self.delay = 2.0
+        self.delay = 0.0
         self.last_request = 0.0
         self.opener = build_opener(NoRedirects())
         robots_url = BASE_URL + "/robots.txt"
