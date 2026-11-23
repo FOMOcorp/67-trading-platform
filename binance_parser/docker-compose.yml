@@ -1,0 +1,39 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.12-alpine
+    container_name: crypto-data-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-crypto}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user \"$${CLICKHOUSE_USER}\" --password \"$${CLICKHOUSE_PASSWORD}\" --query \"SELECT 1\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  collectors:
+    build:
+      context: .
+      dockerfile: collectors/Dockerfile
+    container_name: crypto-data-collectors
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      STORAGE: clickhouse
+      CLICKHOUSE_HOST: clickhouse
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+
+volumes:
+  clickhouse_data:
